@@ -1,7 +1,7 @@
 {
   "name": "daemoncore-duplicate-hunter",
   "productName": "DaemonCore: Duplicate Hunter",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Private, offline duplicate discovery and reversible file cleanup for Windows.",
   "author": "DaemonCore",
   "license": "UNLICENSED",

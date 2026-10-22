@@ -30,6 +30,25 @@ const querySchema = z
     search: z.string().max(500).default(""),
     kind: z.enum(["all", "video"]).default("all"),
     sort: z.enum(["size", "copies", "path"]).default("size"),
+    category: z
+      .enum([
+        "all",
+        "images",
+        "video",
+        "audio",
+        "documents",
+        "archives",
+        "other",
+      ])
+      .default("all"),
+    minSize: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).default(0),
+    maxSize: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).default(0),
+    minCopies: z.number().int().min(2).max(1000000).default(2),
+    crossFolders: z.boolean().default(false),
+    directory: z.string().max(32760).default(""),
   })
-  .strict();
+  .strict()
+  .refine((q) => !q.maxSize || q.maxSize >= q.minSize, {
+    message: "Maximum result size must be at least the minimum size.",
+  });
 module.exports = { settingsSchema, idsSchema, querySchema };

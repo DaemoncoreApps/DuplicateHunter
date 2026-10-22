@@ -36,6 +36,7 @@ import {
   Shield,
   ArrowRight,
   RefreshCw,
+  Info,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -52,7 +53,20 @@ import {
   Toggle,
 } from "./components";
 import { bytes, date, duration, basename } from "./format";
+import {
+  ScanProfiles,
+  FilterPanel,
+  WorkspaceOverview,
+  LiveScan,
+  FolderMap,
+  FileInspector,
+  ComparisonStage,
+  CommandPalette,
+  defaultFilters,
+} from "./features";
+import type { ExplorerFilters, WorkspaceCommand } from "./features";
 import "./style.css";
+import "./upgrade.css";
 
 declare global {
   interface Window {
@@ -106,7 +120,7 @@ function App() {
     [settings, setSettings] = useState<any>(null);
   const [roots, setRoots] = useState<string[]>([]),
     [progress, setProgress] = useState<any>(null),
-    [toast, setToast] = useState(""),
+    [toast, setToastValue] = useState(""),
     [working, setWorking] = useState(false),
     [revision, setRevision] = useState(0);
   const [groups, setGroups] = useState<any>({ total: 0, groups: [] }),
@@ -129,9 +143,22 @@ function App() {
     sizes: [],
   });
   const [context, setContext] = useState<any>(null);
+  const [filters, setFilters] = useState<ExplorerFilters>({
+    ...defaultFilters,
+  });
+  const [inspector, setInspector] = useState<any>(null);
+  const [commandOpen, setCommandOpen] = useState(false);
+  const [groupsLoading, setGroupsLoading] = useState(false);
+  const [toastIsError, setToastIsError] = useState(false);
   const viewedScan = useRef<string | undefined>(undefined);
-  const message = (e: any) =>
-    setToast(e instanceof Error ? e.message : String(e));
+  const setToast = (value: string) => {
+    setToastValue(value);
+    setToastIsError(false);
+  };
+  const message = (e: any) => {
+    setToastValue(e instanceof Error ? e.message : String(e));
+    setToastIsError(true);
+  };
   const run = async (fn: () => Promise<any>) => {
     setWorking(true);
     try {
@@ -211,7 +238,17 @@ function App() {
       !["Duplicate Explorer", "Video Intelligence", "Dashboard"].includes(page)
     )
       return;
+    if (
+      page !== "Dashboard" &&
+      filters.maxSize &&
+      filters.maxSize < filters.minSize
+    ) {
+      setGroups({ total: 0, groups: [], savings: 0 });
+      setGroupsLoading(false);
+      return;
+    }
     let active = true;
+    setGroupsLoading(true);
     window.hunter
       .call("groups", {
         scanId: currentId,
@@ -219,15 +256,19 @@ function App() {
         search: page === "Dashboard" ? "" : query,
         kind: page === "Video Intelligence" ? "video" : "all",
         sort,
+        ...(page === "Dashboard" ? defaultFilters : filters),
       })
       .then((value) => {
         if (active) setGroups(value);
       })
-      .catch(message);
+      .catch(message)
+      .finally(() => {
+        if (active) setGroupsLoading(false);
+      });
     return () => {
       active = false;
     };
-  }, [currentId, page, offset, query, sort, revision]);
+  }, [currentId, page, offset, query, sort, revision, filters]);
   useEffect(() => {
     if (!currentId || page !== "Similar Images") return;
     let active = true;
@@ -250,6 +291,15 @@ function App() {
         setPreview(null);
         setErrorList(null);
         setContext(null);
+        setInspector(null);
+        setCommandOpen(false);
+      }
+      if (e.ctrlKey && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPreview(null);
+        setErrorList(null);
+        setInspector(null);
+        setCommandOpen((v) => !v);
       }
       if (e.ctrlKey && ["1", "2", "3"].includes(e.key)) {
         e.preventDefault();
@@ -260,7 +310,7 @@ function App() {
     return () => window.removeEventListener("keydown", key);
   }, []);
   useEffect(() => {
-    if (!preview && !errorList) return;
+    if (!preview && !errorList && !inspector && !commandOpen) return;
     const prior = document.activeElement as HTMLElement | null;
     const modal = document.querySelector<HTMLElement>('[role="dialog"]');
     if (!modal) return;
@@ -298,7 +348,7 @@ function App() {
       document.removeEventListener("keydown", trap);
       prior?.focus();
     };
-  }, [preview, errorList]);
+  }, [preview, errorList, inspector, commandOpen]);
   const navigate = (p: Page) => {
     setPage(p);
     setOffset(0);
@@ -316,6 +366,9 @@ function App() {
         options: settings,
       });
       setScanId(undefined);
+      setFilters({ ...defaultFilters });
+      setOffset(0);
+      setSearch("");
       viewedScan.current = undefined;
       setSelected(new Map());
       setPlan(null);
@@ -334,7 +387,8 @@ function App() {
     setSelected((old) => {
       const next = new Map(old);
       for (const f of g.files)
-        if (f.id !== g.keep.id && next.size < 1000) next.set(f.id, f);
+        if (f.id !== g.keep.id && !f.protected && next.size < 1000)
+          next.set(f.id, f);
       next.delete(g.keep.id);
       return next;
     });
@@ -345,7 +399,11 @@ function App() {
         action,
       });
       if (action === "copy") setToast("Path copied.");
-      if (action === "preview") setPreview({ files: [file], urls: [result] });
+      if (action === "copyHash") setToast("SHA-256 checksum copied.");
+      if (action === "preview") {
+        setInspector(null);
+        setPreview({ files: [file], urls: [result] });
+      }
     });
   const showCompare = (files: any[]) =>
     run(async () => {
@@ -355,10 +413,13 @@ function App() {
         ),
       );
       setPreview({ files, urls });
+      setInspector(null);
     });
   const openScan = (id: string) =>
     run(async () => {
       setScanId(id);
+      setFilters({ ...defaultFilters });
+      setSearch("");
       viewedScan.current = id;
       await load(id);
       setPage("Duplicate Explorer");
@@ -412,8 +473,65 @@ function App() {
       details stay on this computer.
     </Empty>
   );
+  const commands: WorkspaceCommand[] = [
+    ...pages.map(([label, Icon]) => ({
+      label,
+      description: descriptions[label],
+      icon: <Icon size={19} />,
+      run: () => navigate(label),
+    })),
+    ...(active
+      ? [
+          {
+            label: progress.paused ? "Resume active scan" : "Pause active scan",
+            description: "Control the current scan worker",
+            icon: progress.paused ? <Play size={19} /> : <Pause size={19} />,
+            run: () => {
+              run(() =>
+                window.hunter.call(
+                  "control",
+                  progress.paused ? "resume" : "pause",
+                ),
+              );
+            },
+          },
+          {
+            label: "Cancel active scan",
+            description: "Stop scanning and keep partial scan history",
+            icon: <Square size={19} />,
+            run: () => {
+              run(() => window.hunter.call("control", "cancel"));
+            },
+          },
+        ]
+      : []),
+    ...(hasResults && !active
+      ? [
+          {
+            label: "Export CSV report",
+            description:
+              "Save this scan to a local spreadsheet-friendly report",
+            icon: <Download size={19} />,
+            run: () => {
+              exportReport("csv");
+            },
+          },
+        ]
+      : []),
+  ];
   const fileTools = (f: any) => (
     <div className="file-tools">
+      <button
+        title="Inspect file metadata"
+        aria-label="Inspect file metadata"
+        onClick={() =>
+          run(async () =>
+            setInspector(await window.hunter.call("inspectFile", f.id)),
+          )
+        }
+      >
+        <Info size={15} />
+      </button>
       <button
         title="Reveal in Explorer"
         aria-label="Reveal in Explorer"
@@ -502,7 +620,10 @@ function App() {
       </div>
       <aside>
         <div className="brand">
-          <img src="./daemoncore-logo.png" alt="DaemonCore Duplicate Hunter" />
+          <img
+            src="./daemoncore-logo-transparent.png"
+            alt="DaemonCore Duplicate Hunter"
+          />
           <div className="brand-caption">FILE INTELLIGENCE, UNLEASHED.</div>
         </div>
         <div className="nav-caption">WORKSPACE</div>
@@ -541,6 +662,14 @@ function App() {
         </div>
       </aside>
       <main>
+        <div className="workspace-topline">
+          <span>
+            <span className="live-dot" /> PERSONAL FILE INTELLIGENCE
+          </span>
+          <button onClick={() => setCommandOpen(true)}>
+            <Search size={14} /> Jump to a tool <kbd>Ctrl K</kbd>
+          </button>
+        </div>
         <header>
           <div>
             <div className="eyebrow">DAEMONCORE / {page.toUpperCase()}</div>
@@ -615,18 +744,10 @@ function App() {
                   Launch a scan <ArrowUpRight size={17} />
                 </Button>
               </div>
-              <div className="radar" aria-hidden="true">
-                <div className="radar-circle r1" />
-                <div className="radar-circle r2" />
-                <div className="radar-circle r3" />
-                <div className="radar-line" />
-                <div className="radar-core">
-                  <Files size={45} />
-                </div>
-                <i className="blip b1" />
-                <i className="blip b2" />
-                <i className="blip b3" />
-                <span>SHA-256 + BYTE VERIFICATION</span>
+              <div className="hero-emblem" aria-hidden="true">
+                <div className="emblem-orbit" />
+                <img src="./daemoncore-logo-transparent.png" alt="" />
+                <span>EXACT MATCHES. EXPLAINED DECISIONS.</span>
               </div>
             </section>
             <div className="metrics">
@@ -658,6 +779,13 @@ function App() {
                 icon={ShieldCheck}
               />
             </div>
+            <WorkspaceOverview
+              summary={s}
+              history={state.history}
+              onExplore={() => navigate("Duplicate Explorer")}
+              onHistory={() => navigate("Scan History")}
+              onScan={() => navigate("Scan Center")}
+            />
             <div className="two-columns">
               <section className="panel">
                 <div className="panel-heading">
@@ -763,6 +891,45 @@ function App() {
 
         {page === "Scan Center" && (
           <>
+            <ScanProfiles
+              profiles={state.profiles || []}
+              roots={roots}
+              settings={settings}
+              disabled={working || active}
+              onApply={(options, locations) => {
+                setSettings(options);
+                if (locations) setRoots(locations);
+                setToast(
+                  "Scan setup applied. Review the locations, then start your scan.",
+                );
+              }}
+              onSave={(name, id) =>
+                run(async () => {
+                  const profiles = await window.hunter.call("saveProfile", {
+                    ...(id ? { id } : {}),
+                    name,
+                    roots,
+                    options: settings,
+                  });
+                  setState({ ...state, profiles });
+                  setToast("Scan setup saved.");
+                  return profiles.find(
+                    (p: any) =>
+                      p.name.toLowerCase() === name.trim().toLowerCase(),
+                  );
+                })
+              }
+              onDelete={(id) =>
+                run(async () => {
+                  const profiles = await window.hunter.call(
+                    "deleteProfile",
+                    id,
+                  );
+                  setState({ ...state, profiles });
+                  setToast("Saved setup removed.");
+                })
+              }
+            />
             <div className="two-columns scan-columns">
               <section className="panel">
                 <div className="panel-heading">
@@ -899,74 +1066,13 @@ function App() {
               </section>
             </div>
             {active && (
-              <section className="panel scan-progress">
-                <div className="panel-heading">
-                  <h2>
-                    <LoaderCircle
-                      size={20}
-                      className={progress.paused ? "" : "spin"}
-                    />
-                    {progress.paused ? "Scan paused" : progress.phase}
-                  </h2>
-                  <div className="row">
-                    <Button
-                      onClick={() =>
-                        run(() =>
-                          window.hunter.call(
-                            "control",
-                            progress.paused ? "resume" : "pause",
-                          ),
-                        )
-                      }
-                    >
-                      {progress.paused ? (
-                        <Play size={15} />
-                      ) : (
-                        <Pause size={15} />
-                      )}{" "}
-                      {progress.paused ? "Resume" : "Pause"}
-                    </Button>
-                    <Button
-                      onClick={() =>
-                        run(() => window.hunter.call("control", "cancel"))
-                      }
-                    >
-                      <Square size={14} /> Cancel
-                    </Button>
-                  </div>
-                </div>
-                <div className="progress-track">
-                  {progress.total > 0 ? (
-                    <div
-                      style={{
-                        width: `${Math.min(100, (100 * progress.processed) / progress.total)}%`,
-                      }}
-                    />
-                  ) : (
-                    <div className={progress.paused ? "" : "indeterminate"} />
-                  )}
-                </div>
-                <div className="progress-stats">
-                  <span>
-                    <strong>{progress.files.toLocaleString()}</strong> files
-                    discovered
-                  </span>
-                  <span>
-                    <strong>{bytes(progress.bytes)}</strong> indexed
-                  </span>
-                  <span>
-                    <strong>{duration(progress.elapsed)}</strong> elapsed
-                  </span>
-                  <span>
-                    <strong>{progress.errors}</strong> issues
-                  </span>
-                </div>
-                <p className="muted">
-                  {progress.total
-                    ? `${progress.processed.toLocaleString()} of ${progress.total.toLocaleString()} candidates in this phase`
-                    : "Discovery has no known total. Progress reflects actual files discovered."}
-                </p>
-              </section>
+              <LiveScan
+                progress={progress}
+                disabled={working}
+                onControl={(command) =>
+                  run(() => window.hunter.call("control", command))
+                }
+              />
             )}
             {!active && s && (
               <section className="panel completed">
@@ -1035,6 +1141,45 @@ function App() {
                     Review {selected.size} selected <ArrowRight size={15} />
                   </Button>
                 </div>
+                <FilterPanel
+                  value={
+                    page === "Video Intelligence"
+                      ? { ...filters, category: "video" }
+                      : filters
+                  }
+                  onChange={(next) => {
+                    if (
+                      page === "Video Intelligence" &&
+                      next.category !== "video"
+                    )
+                      navigate("Duplicate Explorer");
+                    setFilters(next);
+                    setOffset(0);
+                  }}
+                  total={groups.total}
+                  savings={groups.savings || 0}
+                  disabled={working || groupsLoading}
+                  onSelect={() => {
+                    setSelected((old) => {
+                      const next = new Map(old);
+                      for (const g of groups.groups) {
+                        for (const f of g.files)
+                          if (
+                            f.id !== g.keep.id &&
+                            f.nlink === 1 &&
+                            !f.protected &&
+                            next.size < 1000
+                          )
+                            next.set(f.id, f);
+                        next.delete(g.keep.id);
+                      }
+                      return next;
+                    });
+                    setToast(
+                      "Suggested copies on this page added to review. Every group keeps a copy.",
+                    );
+                  }}
+                />
                 <div className="notice compact">
                   <Shield size={16} />
                   <span>
@@ -1042,7 +1187,12 @@ function App() {
                     preferences. They do not identify an original.
                   </span>
                 </div>
-                {groups.groups.length ? (
+                {groupsLoading ? (
+                  <div className="results-loading">
+                    <LoaderCircle size={19} className="spin" /> Updating
+                    verified results…
+                  </div>
+                ) : groups.groups.length ? (
                   groups.groups.map((g: any) => (
                     <Group
                       key={g.group_id}
@@ -1234,6 +1384,13 @@ function App() {
                     <AnalyticsBars rows={analytics.drives} />
                   </section>
                 </div>
+                <FolderMap
+                  rows={analytics.directories}
+                  onOpen={(directory) => {
+                    navigate("Duplicate Explorer");
+                    setFilters({ ...defaultFilters, directory });
+                  }}
+                />
                 <section className="panel">
                   <h2>Scan coverage</h2>
                   {s.roots.map((p: string) => (
@@ -1809,9 +1966,27 @@ function App() {
           </button>
         </div>
       )}
+      {inspector && (
+        <FileInspector
+          data={inspector}
+          selected={selected.has(inspector.file.id)}
+          onClose={() => setInspector(null)}
+          onToggle={() => toggle(inspector.file)}
+          onAction={(command) => action(inspector.file, command)}
+        />
+      )}
+      {commandOpen && (
+        <CommandPalette
+          commands={commands}
+          onClose={() => setCommandOpen(false)}
+        />
+      )}
       {toast && (
-        <div className="toast" role="status">
-          <AlertTriangle size={18} />
+        <div
+          className={`toast ${toastIsError ? "error" : "success"}`}
+          role="status"
+        >
+          {toastIsError ? <AlertTriangle size={18} /> : <Check size={18} />}
           <span>{toast}</span>
           <button
             aria-label="Dismiss notification"
@@ -1841,41 +2016,12 @@ function App() {
                 <X size={16} /> Close
               </Button>
             </div>
-            <div className="media-comparison">
-              {preview.files.map((f: any, i: number) => (
-                <div key={f.id}>
-                  {/\.(mp4|webm|mov|mkv|avi|wmv|m4v)$/i.test(f.path) ? (
-                    <video
-                      controls
-                      src={preview.urls[i]}
-                      onError={() =>
-                        message(
-                          "This video codec cannot be previewed. Use Open with Windows.",
-                        )
-                      }
-                    />
-                  ) : (
-                    <img
-                      src={preview.urls[i]}
-                      alt={basename(f.path)}
-                      onError={() =>
-                        message(
-                          "This format cannot be previewed. Use Open with Windows.",
-                        )
-                      }
-                    />
-                  )}
-                  <h3>{basename(f.path)}</h3>
-                  <p className="full-path">{f.path}</p>
-                  <small>
-                    {bytes(f.size)} · {date(new Date(f.mtime).toISOString())}
-                    {f.width ? ` · ${f.width} × ${f.height}` : ""}
-                  </small>
-                  {f.hash && <code>SHA-256 {f.hash}</code>}
-                  {fileTools(f)}
-                </div>
-              ))}
-            </div>
+            <ComparisonStage
+              files={preview.files}
+              urls={preview.urls}
+              tools={fileTools}
+              onError={message}
+            />
             <p className="muted">
               Visual previews do not prove equality. Exact groups are verified
               by the scan engine.

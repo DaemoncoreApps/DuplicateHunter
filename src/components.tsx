@@ -335,11 +335,13 @@ export function Group({
                 type="checkbox"
                 aria-label={`Select ${f.path}`}
                 checked={selected.has(f.id)}
+                disabled={f.protected && !selected.has(f.id)}
                 onChange={() => toggle(f)}
               />
               <div className="file-description">
                 <strong title={f.path}>
                   {f.path}
+                  {f.protected && <span className="keep-label">PROTECTED</span>}
                   {f.id === g.keep.id && (
                     <span className="keep-label">SUGGESTED KEEP</span>
                   )}

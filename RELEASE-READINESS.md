@@ -4,6 +4,8 @@ This is a working Windows application build. It is not represented as Microsoft 
 
 ## Implemented
 
+Version 0.2 expands the app with a transparent brand asset, refreshed command dashboard, focused presets, saved scan profiles, advanced result filters, protected-copy recommendations, live metadata inspection, image reveal-overlay comparison, storage hotspot drilldown, a history chart, and keyboard command navigation. The expanded Node suite contains 31 passing tests. Electron integration checks exercise profile saving, filters, the inspector, the overlay, keyboard commands, hotspot navigation, transparent branding, and the 1060 × 740 layout in addition to the existing scan and cleanup checks.
+
 - Supplied branding and Partner Center package/publisher identity.
 - Sandboxed Electron renderer, validated IPC, scoped media previews, native dialogs.
 - Worker scanning with bounded reads, SQLite-backed directory queue and persisted history.

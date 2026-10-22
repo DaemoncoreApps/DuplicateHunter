@@ -21,19 +21,21 @@ const {
   saveSettings,
   summary,
 } = require("./database.cjs");
-const { settingsSchema, idsSchema, querySchema } = require("./validation.cjs");
+const { settingsSchema, idsSchema } = require("./validation.cjs");
+const { queryGroups } = require("./explorer.cjs");
 const {
-  canonical,
-  within,
-  recommendation,
-  unchanged,
-  assertNoLinks,
-} = require("./files.cjs");
+  readProfiles,
+  saveProfile,
+  deleteProfile,
+  profileSchema,
+} = require("./profiles.cjs");
+const { canonical, within, unchanged, assertNoLinks } = require("./files.cjs");
 const {
   validateSelection,
   cleanup,
   restore,
   reconcile,
+  protectedPath,
 } = require("./cleanup.cjs");
 const { imageExtensions, videoExtensions } = require("./scanner.cjs");
 const { profilePath } = require("./paths.cjs");
@@ -101,6 +103,7 @@ function boot(id) {
     progress,
     busy,
     version: app.getVersion(),
+    profiles: readProfiles(db),
   };
 }
 async function eligibleFile(id) {
@@ -126,6 +129,59 @@ async function handle(method, payload) {
     for (const p of folders) chosen.add(canonical(p));
     return folders;
   }
+  if (method === "saveProfile") {
+    const profile = profileSchema.parse(payload);
+    const known = [
+      ...history().flatMap((s) => s.roots),
+      ...readProfiles(db).flatMap((p) => p.roots),
+    ].map(canonical);
+    for (const root of profile.roots)
+      if (!chosen.has(canonical(root)) && !known.includes(canonical(root)))
+        throw new Error(
+          "Choose profile locations with the folder picker first.",
+        );
+    return saveProfile(db, profile);
+  }
+  if (method === "deleteProfile") return deleteProfile(db, payload);
+  if (method === "inspectFile") {
+    const file = db
+      .prepare("SELECT * FROM files WHERE id=?")
+      .get(z.number().int().positive().parse(payload));
+    if (!file) throw new Error("File snapshot not found.");
+    let availability = "present",
+      live = null;
+    try {
+      await assertNoLinks(file.path);
+      const stat = await fs.lstat(file.path, { bigint: true });
+      live = {
+        size: Number(stat.size),
+        modified: Number(stat.mtimeMs),
+        links: Number(stat.nlink),
+      };
+      if (!unchanged(stat, file)) availability = "changed";
+    } catch (e) {
+      availability = e.code === "ENOENT" ? "missing" : "unavailable";
+    }
+    const peers = file.group_id
+      ? db
+          .prepare(
+            "SELECT id,path,size,mtime,state FROM files WHERE scan_id=? AND group_id=? ORDER BY path LIMIT 50",
+          )
+          .all(file.scan_id, file.group_id)
+      : [];
+    const settings = readSettings(db);
+    return {
+      file,
+      live,
+      availability,
+      peers,
+      protected:
+        protectedPath(file.path, settings, systemFolders) || file.nlink > 1,
+      scan: db
+        .prepare("SELECT started,status FROM scans WHERE id=?")
+        .get(file.scan_id),
+    };
+  }
   if (method === "saveSettings") {
     const settings = settingsSchema.parse(payload);
     saveSettings(db, settings);
@@ -141,9 +197,10 @@ async function handle(method, payload) {
       })
       .strict()
       .parse(payload);
-    const known = history()
-      .flatMap((s) => s.roots)
-      .map(canonical);
+    const known = [
+      ...history().flatMap((s) => s.roots),
+      ...readProfiles(db).flatMap((p) => p.roots),
+    ].map(canonical);
     const roots = [
       ...new Map(
         input.roots.map((p) => [canonical(p), path.resolve(p)]),
@@ -228,47 +285,8 @@ async function handle(method, payload) {
     }
     return true;
   }
-  if (method === "groups") {
-    const q = querySchema.parse(payload),
-      video =
-        q.kind === "video"
-          ? "AND ext IN ('.mp4','.mkv','.mov','.avi','.webm','.wmv','.m4v')"
-          : "";
-    const search = q.search.replace(/[\\%_]/g, "\\$&"),
-      filter = `scan_id=? AND group_id IS NOT NULL AND state='present' ${video} AND group_id IN (SELECT group_id FROM files WHERE scan_id=? AND path LIKE ? ESCAPE '\\')`;
-    const args = [q.scanId, q.scanId, `%${search}%`];
-    const order = {
-      size: "savings DESC",
-      copies: "copies DESC",
-      path: "first_path ASC",
-    }[q.sort];
-    const groups = db
-      .prepare(
-        `SELECT group_id,hash,size,MIN(path) first_path,COUNT(*) copies,size*(COUNT(*)-1) savings FROM files WHERE ${filter} GROUP BY group_id HAVING COUNT(*)>1 ORDER BY ${order} LIMIT 30 OFFSET ?`,
-      )
-      .all(...args, q.offset);
-    const settings = readSettings(db);
-    return {
-      total: db
-        .prepare(
-          `SELECT COUNT(*) n FROM (SELECT group_id FROM files WHERE ${filter} GROUP BY group_id HAVING COUNT(*)>1)`,
-        )
-        .get(...args).n,
-      groups: groups.map((g) => {
-        const files = db
-          .prepare(
-            "SELECT * FROM files WHERE scan_id=? AND group_id=? AND state='present' ORDER BY path LIMIT 1001",
-          )
-          .all(q.scanId, g.group_id);
-        return {
-          ...g,
-          files: files.slice(0, 1000),
-          truncated: files.length > 1000,
-          keep: recommendation(files, settings),
-        };
-      }),
-    };
-  }
+  if (method === "groups")
+    return queryGroups(db, payload, readSettings(db), systemFolders);
   if (method === "pairs") {
     const q = z
       .object({
@@ -322,13 +340,19 @@ async function handle(method, payload) {
     const p = z
         .object({
           id: z.number().int().positive(),
-          action: z.enum(["reveal", "copy", "open", "preview"]),
+          action: z.enum(["reveal", "copy", "open", "preview", "copyHash"]),
         })
         .strict()
         .parse(payload),
       file = await eligibleFile(p.id);
     if (p.action === "copy") {
       await clipboard.writeText(file.path);
+      return true;
+    }
+    if (p.action === "copyHash") {
+      if (!file.hash)
+        throw new Error("This file has no recorded SHA-256 checksum.");
+      await clipboard.writeText(file.hash);
       return true;
     }
     if (p.action === "reveal") {
@@ -618,6 +642,11 @@ async function createWindow() {
     app.quit();
   }
   if (smoke) {
+    const artifactDirectory = process.env.HUNTER_SMOKE_OUTPUT
+      ? path.resolve(process.env.HUNTER_SMOKE_OUTPUT)
+      : app.isPackaged
+        ? path.join(app.getPath("temp"), "DuplicateHunter-Packaged-Smoke")
+        : path.join(__dirname, "../artifacts");
     const failures = [];
     win.webContents.on("render-process-gone", (_e, details) =>
       failures.push(details.reason),
@@ -630,6 +659,7 @@ async function createWindow() {
         handle,
         chosen,
         hasWorker: () => Boolean(worker),
+        artifactDirectory,
       });
     } catch (e) {
       failures.push(e.stack);
@@ -637,11 +667,6 @@ async function createWindow() {
     const result = await win.webContents.executeJavaScript(
       '({title:document.title,bridge:typeof window.hunter,body:document.body.innerText,buttons:document.querySelectorAll("button").length})',
     );
-    const artifactDirectory = process.env.HUNTER_SMOKE_OUTPUT
-      ? path.resolve(process.env.HUNTER_SMOKE_OUTPUT)
-      : app.isPackaged
-        ? path.join(app.getPath("temp"), "DuplicateHunter-Packaged-Smoke")
-        : path.join(__dirname, "../artifacts");
     await fs.mkdir(artifactDirectory, { recursive: true });
     await fs.writeFile(
       path.join(artifactDirectory, "smoke.png"),
@@ -662,8 +687,14 @@ async function createWindow() {
   }
 }
 const lock = app.requestSingleInstanceLock();
-if (!lock) app.quit();
-else {
+if (!lock) {
+  if (process.argv.includes("--startup-check")) {
+    console.error(
+      "Close the running Duplicate Hunter instance before testing normal startup.",
+    );
+    app.exit(2);
+  } else app.quit();
+} else {
   app.on("second-instance", () => {
     if (win) {
       if (win.isMinimized()) win.restore();

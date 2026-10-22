@@ -4,7 +4,7 @@ const sharp = require("sharp");
 async function main() {
   const root = path.join(__dirname, "..");
   await fs.mkdir(path.join(root, "build/appx"), { recursive: true });
-  const source = path.join(root, "public/daemoncore-logo.png");
+  const source = path.join(root, "public/daemoncore-logo-transparent.png");
   await sharp(source)
     .resize(512, 512, { fit: "contain", background: "#0b0c10" })
     .png()

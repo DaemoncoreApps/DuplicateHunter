@@ -79,6 +79,8 @@ async function scan(db, id, roots, options, controls, emit = () => {}) {
     phase = "Discovering",
     last = 0;
   const started = Date.now();
+  let phaseStarted = started,
+    currentPath = "";
   const checkpoint = async () => {
     if (controls.cancelled) throw new Cancelled();
     while (controls.paused) {
@@ -99,6 +101,8 @@ async function scan(db, id, roots, options, controls, emit = () => {}) {
         total,
         elapsed: Date.now() - started,
         paused: controls.paused,
+        phaseElapsed: Date.now() - phaseStarted,
+        currentPath,
       });
     }
   };
@@ -172,6 +176,7 @@ async function scan(db, id, roots, options, controls, emit = () => {}) {
       db.prepare("UPDATE directories SET done=1 WHERE id=?").run(dir.id);
       if (exclusions.some((p) => within(dir.path, p))) continue;
       try {
+        currentPath = dir.path;
         const stat = await fs.lstat(dir.path, { bigint: true });
         if (stat.isSymbolicLink() || !stat.isDirectory()) continue;
         const iterator = await fs.opendir(dir.path);
@@ -224,6 +229,7 @@ async function scan(db, id, roots, options, controls, emit = () => {}) {
     flush();
     const runCandidates = async (label, where, field, partial) => {
       phase = label;
+      phaseStarted = Date.now();
       processed = 0;
       total = db
         .prepare(`SELECT COUNT(*) n FROM files WHERE scan_id=? AND ${where}`)
@@ -243,6 +249,7 @@ async function scan(db, id, roots, options, controls, emit = () => {}) {
           const outcomes = await Promise.allSettled(
             page.slice(i, i + options.concurrency).map(async (f) => {
               try {
+                currentPath = f.path;
                 const hash = await hashFile(f, partial, checkpoint);
                 db.prepare(`UPDATE files SET ${field}=? WHERE id=?`).run(
                   hash,
@@ -281,6 +288,7 @@ async function scan(db, id, roots, options, controls, emit = () => {}) {
       false,
     );
     phase = "Byte verification";
+    phaseStarted = Date.now();
     processed = 0;
     total = db
       .prepare(
@@ -304,6 +312,7 @@ async function scan(db, id, roots, options, controls, emit = () => {}) {
           "SELECT * FROM files WHERE scan_id=? AND hash=? AND state='present' ORDER BY id LIMIT 1",
         )
         .get(id, hash);
+      currentPath = first.path;
       try {
         // A digest is only a candidate: each retained group also passes a streamed byte comparison.
         await hashFile(first, false, checkpoint);
@@ -348,6 +357,7 @@ async function scan(db, id, roots, options, controls, emit = () => {}) {
     }
     if (options.scanImages) {
       phase = "Image fingerprints";
+      phaseStarted = Date.now();
       processed = 0;
       total = db
         .prepare(
@@ -370,6 +380,7 @@ async function scan(db, id, roots, options, controls, emit = () => {}) {
         if (!page.length) break;
         cursor = page.at(-1).id;
         for (const f of page) {
+          currentPath = f.path;
           if (!imageExtensions.has(f.ext)) continue;
           await checkpoint();
           if (indexed >= 20000 || pairs >= 100000) {

@@ -16,6 +16,9 @@ const methods = new Set([
   "errors",
   "drives",
   "clearHistory",
+  "saveProfile",
+  "deleteProfile",
+  "inspectFile",
 ]);
 contextBridge.exposeInMainWorld("hunter", {
   call: (method, payload) => {

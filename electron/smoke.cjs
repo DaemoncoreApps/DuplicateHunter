@@ -3,7 +3,13 @@ const path = require("node:path");
 const os = require("node:os");
 const assert = require("node:assert/strict");
 
-async function smokeTest({ win, handle, chosen, hasWorker }) {
+async function smokeTest({
+  win,
+  handle,
+  chosen,
+  hasWorker,
+  artifactDirectory,
+}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "hunter-electron-"));
   const checks = [];
   const wait = async (predicate) => {
@@ -15,6 +21,22 @@ async function smokeTest({ win, handle, chosen, hasWorker }) {
     }
   };
   const evaluate = (code) => win.webContents.executeJavaScript(code);
+  const paint = () =>
+    evaluate(
+      "new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))",
+    );
+  const screenshot = async (name) => {
+    await paint();
+    await fs.mkdir(artifactDirectory, { recursive: true });
+    await fs.writeFile(
+      path.join(artifactDirectory, name + ".png"),
+      (await win.webContents.capturePage()).toPNG(),
+    );
+  };
+  const input = async (selector, value) =>
+    evaluate(
+      `(()=>{const input=document.querySelector(${JSON.stringify(selector)});Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,${JSON.stringify(value)});input.dispatchEvent(new Event('input',{bubbles:true}));})()`,
+    );
   const navigate = async (label) => {
     await evaluate(
       `Array.from(document.querySelectorAll('nav button')).find(b=>b.innerText.includes(${JSON.stringify(label)})).click()`,
@@ -88,6 +110,15 @@ async function smokeTest({ win, handle, chosen, hasWorker }) {
     checks.push("Scan location capability validation");
     await assert.rejects(handle("groups", { scanId: "not-an-id" }));
     checks.push("IPC payload validation");
+    await assert.rejects(
+      handle("saveProfile", {
+        name: "Unchosen location",
+        roots: [path.dirname(root)],
+        options,
+      }),
+      /picker/,
+    );
+    checks.push("Saved profiles enforce chosen-location permissions");
     for (const page of [
       "Dashboard",
       "Scan Center",
@@ -105,10 +136,40 @@ async function smokeTest({ win, handle, chosen, hasWorker }) {
     await wait(() =>
       evaluate('document.querySelectorAll(".group-heading").length===1'),
     );
+    await evaluate(
+      'Array.from(document.querySelectorAll(".category-tabs button")).find(b=>b.innerText==="Images").click()',
+    );
+    await wait(() =>
+      evaluate('document.querySelectorAll(".group-heading").length===0'),
+    );
+    await evaluate(
+      'Array.from(document.querySelectorAll(".category-tabs button")).find(b=>b.innerText==="All files").click()',
+    );
+    await wait(() =>
+      evaluate('document.querySelectorAll(".group-heading").length===1'),
+    );
+    checks.push("Category filtering in the real explorer");
     await evaluate('document.querySelector(".group-heading").click()');
     await wait(() =>
       evaluate('document.querySelectorAll(".file-row").length===2'),
     );
+    await evaluate(
+      'Array.from(document.querySelectorAll(".file-row button")).find(b=>b.getAttribute("aria-label")==="Inspect file metadata").click()',
+    );
+    await wait(() =>
+      evaluate('Boolean(document.querySelector(".file-inspector"))'),
+    );
+    assert.equal(
+      await evaluate(
+        'document.querySelector(".inspector-status").innerText.includes("Matches")',
+      ),
+      true,
+    );
+    await screenshot("file-inspector");
+    await evaluate(
+      'Array.from(document.querySelectorAll(".file-inspector button")).find(b=>b.getAttribute("aria-label")==="Close file inspector").click()',
+    );
+    checks.push("Live file inspector and metadata");
     await evaluate(
       'document.querySelector(".file-row").dispatchEvent(new MouseEvent("contextmenu",{bubbles:true,clientX:500,clientY:400}))',
     );
@@ -149,7 +210,126 @@ async function smokeTest({ win, handle, chosen, hasWorker }) {
     assert.equal(await evaluate("typeof window.require"), "undefined");
     assert.equal(await evaluate("typeof window.process"), "undefined");
     checks.push("Sandboxed renderer without Node globals");
+    await navigate("Scan History");
+    await evaluate(
+      'Array.from(document.querySelectorAll(".history-row button")).find(b=>b.innerText.includes("Rescan")).click()',
+    );
+    await wait(() =>
+      evaluate('document.querySelector("h1").innerText==="Scan Center"'),
+    );
+    await input('input[aria-label="Scan profile name"]', "Smoke scan setup");
+    await wait(() =>
+      evaluate('!document.querySelector(".save-profile-form button").disabled'),
+    );
+    await evaluate(
+      'document.querySelector(".save-profile-form").requestSubmit()',
+    );
+    await wait(() =>
+      evaluate(
+        'document.querySelector(".saved-profile-list").innerText.includes("Smoke scan setup")',
+      ),
+    );
+    assert.equal((await handle("boot")).profiles.length, 1);
+    await input('input[aria-label="Scan profile name"]', "Updated smoke setup");
+    await wait(() =>
+      evaluate(
+        'document.querySelector(".save-profile-form button").innerText.includes("Update setup")',
+      ),
+    );
+    await evaluate(
+      'document.querySelector(".save-profile-form").requestSubmit()',
+    );
+    await wait(async () => {
+      const data = await handle("boot");
+      return (
+        data.profiles.length === 1 &&
+        data.profiles[0].name === "Updated smoke setup"
+      );
+    });
+    await screenshot("scan-center");
+    checks.push("Create and update a saved scan profile through the interface");
+    await navigate("Similar Images");
+    await wait(() =>
+      evaluate('document.querySelectorAll(".image-pairs section").length>0'),
+    );
+    await evaluate(
+      'document.querySelector(".image-pairs section .button").click()',
+    );
+    await wait(() =>
+      evaluate('Boolean(document.querySelector(".comparison-controls"))'),
+    );
+    await evaluate(
+      'Array.from(document.querySelectorAll(".segmented button")).find(b=>b.innerText.includes("Reveal overlay")).click()',
+    );
+    await wait(() =>
+      evaluate('Boolean(document.querySelector(".image-wipe"))'),
+    );
+    await screenshot("image-comparison");
+    await evaluate(
+      'Array.from(document.querySelectorAll(".media-modal .panel-heading button")).find(b=>b.innerText.includes("Close")).click()',
+    );
+    checks.push("Image reveal-overlay comparison");
+    await evaluate(
+      'window.dispatchEvent(new KeyboardEvent("keydown",{key:"k",ctrlKey:true,bubbles:true}))',
+    );
+    await wait(() =>
+      evaluate('Boolean(document.querySelector(".command-palette"))'),
+    );
+    await input('input[aria-label="Search commands"]', "Storage Analytics");
+    await wait(() =>
+      evaluate(
+        'document.querySelectorAll(".command-results button").length===1',
+      ),
+    );
+    await evaluate('document.querySelector(".command-results button").click()');
+    await wait(() =>
+      evaluate('document.querySelector("h1").innerText==="Storage Analytics"'),
+    );
+    await wait(() =>
+      evaluate('Boolean(document.querySelector(".folder-mosaic button"))'),
+    );
+    await evaluate('document.querySelector(".folder-mosaic button").click()');
+    await wait(() =>
+      evaluate('Boolean(document.querySelector(".directory-filter"))'),
+    );
+    checks.push("Command palette and storage hotspot drilldown");
+    await evaluate(
+      'document.querySelector(".directory-filter button").click()',
+    );
     await navigate("Dashboard");
+    await wait(() =>
+      evaluate(
+        'document.querySelector(".brand img").complete&&document.querySelector(".brand img").naturalWidth>0',
+      ),
+    );
+    assert.equal(
+      await evaluate(
+        'document.querySelector(".brand img").src.includes("transparent")',
+      ),
+      true,
+    );
+    await screenshot("dashboard");
+    win.setSize(1060, 740);
+    await paint();
+    assert.equal(
+      await evaluate("document.documentElement.scrollWidth<=window.innerWidth"),
+      true,
+    );
+    await screenshot("dashboard-compact");
+    win.setSize(1480, 960);
+    await paint();
+    checks.push("Transparent logo and compact-window layout");
+    await fs.appendFile(image.path, Buffer.from([0]));
+    assert.equal(
+      (await handle("inspectFile", image.id)).availability,
+      "changed",
+    );
+    await fs.unlink(image.path);
+    assert.equal(
+      (await handle("inspectFile", image.id)).availability,
+      "missing",
+    );
+    checks.push("Inspector detects changed and missing files");
     return { passed: true, checks };
   } finally {
     if (hasWorker()) await handle("control", "cancel");

@@ -28,6 +28,12 @@ const {
 } = require("../electron/cleanup.cjs");
 const { settingsSchema } = require("../electron/validation.cjs");
 const { profilePath } = require("../electron/paths.cjs");
+const { queryGroups } = require("../electron/explorer.cjs");
+const {
+  saveProfile,
+  readProfiles,
+  deleteProfile,
+} = require("../electron/profiles.cjs");
 
 test("normal Windows profile paths do not inherit the colon in the display name", () => {
   const folder = profilePath(path.resolve("AppData", "Roaming"));
@@ -545,4 +551,155 @@ test("partial fingerprints and byte comparison retry short filesystem reads", as
   } finally {
     fs.open = original;
   }
+});
+test("explorer categories retain byte-identical copies with different extensions", async (t) => {
+  const f = await fixture(t);
+  await f.add("photos/a.jpg", "image payload");
+  await f.add("backup/b.copy", "image payload");
+  const id = await f.run();
+  const result = queryGroups(
+    f.db,
+    { scanId: id, category: "images" },
+    defaults,
+  );
+  assert.equal(result.total, 1);
+  assert.equal(result.groups[0].files.length, 2);
+  assert.equal(result.savings, 13);
+  assert.equal(
+    queryGroups(f.db, { scanId: id, category: "video" }, defaults).total,
+    0,
+  );
+});
+test("result size, copy-count, cross-folder and directory filters use complete groups", async (t) => {
+  const f = await fixture(t);
+  await f.add("one/a.txt", "abc");
+  await f.add("two/b.txt", "abc");
+  await f.add("same/c.txt", "longer content");
+  await f.add("same/d.txt", "longer content");
+  const id = await f.run();
+  assert.equal(
+    queryGroups(f.db, { scanId: id, crossFolders: true }, defaults).total,
+    1,
+  );
+  assert.equal(
+    queryGroups(f.db, { scanId: id, minCopies: 3 }, defaults).total,
+    0,
+  );
+  assert.equal(
+    queryGroups(f.db, { scanId: id, minSize: 4 }, defaults).total,
+    1,
+  );
+  const filtered = queryGroups(
+    f.db,
+    { scanId: id, directory: path.join(f.data, "one") },
+    defaults,
+  );
+  assert.equal(filtered.total, 1);
+  assert.equal(filtered.groups[0].copies, 2);
+  assert.throws(
+    () => queryGroups(f.db, { scanId: id, minSize: 10, maxSize: 5 }, defaults),
+    /Maximum result size/,
+  );
+});
+test("explorer search escapes wildcard characters and SQL input remains data", async (t) => {
+  const f = await fixture(t);
+  await f.add("100%.txt", "abc");
+  await f.add("copy.txt", "abc");
+  const id = await f.run();
+  assert.equal(
+    queryGroups(f.db, { scanId: id, search: "100%" }, defaults).total,
+    1,
+  );
+  assert.equal(
+    queryGroups(f.db, { scanId: id, search: "_" }, defaults).total,
+    0,
+  );
+  assert.equal(
+    queryGroups(f.db, { scanId: id, search: "' OR 1=1 --" }, defaults).total,
+    0,
+  );
+});
+test("protected copies are marked in results and become the keep recommendation", async (t) => {
+  const f = await fixture(t);
+  await f.add("a.txt", "abc");
+  await f.add("protected/b.txt", "abc");
+  const id = await f.run();
+  const group = queryGroups(
+    f.db,
+    { scanId: id },
+    { ...defaults, protectedFolders: [path.join(f.data, "protected")] },
+  ).groups[0];
+  assert.equal(group.files.filter((f) => f.protected).length, 1);
+  assert.equal(group.files.find((f) => f.id === group.keep.id).protected, true);
+  assert.match(group.keep.reason, /protected/);
+});
+test("scan profiles persist, update, reject duplicate names and delete without touching scan history", async (t) => {
+  const f = await fixture(t);
+  const profiles = saveProfile(f.db, {
+    name: "Photo archive",
+    roots: [f.data],
+    options: defaults,
+  });
+  assert.equal(profiles.length, 1);
+  const id = profiles[0].id;
+  assert.equal(readProfiles(f.db)[0].roots[0], f.data);
+  assert.throws(
+    () =>
+      saveProfile(f.db, {
+        name: "Photo archive",
+        roots: [f.data],
+        options: defaults,
+      }),
+    /already exists/,
+  );
+  const updated = saveProfile(f.db, {
+    id,
+    name: "Photo archive",
+    roots: [f.data],
+    options: { ...defaults, scanImages: true },
+  });
+  assert.equal(updated[0].options.scanImages, true);
+  assert.equal(deleteProfile(f.db, id).length, 0);
+  assert.throws(() => deleteProfile(f.db, "invalid-id"));
+  assert.equal(f.db.prepare("SELECT COUNT(*) n FROM scans").get().n, 0);
+});
+test("profile count and field validation keep saved setups bounded", async (t) => {
+  const f = await fixture(t);
+  for (let i = 0; i < 20; i++)
+    saveProfile(f.db, {
+      name: `Setup ${i}`,
+      roots: [f.data],
+      options: defaults,
+    });
+  assert.throws(
+    () =>
+      saveProfile(f.db, {
+        name: "Overflow",
+        roots: [f.data],
+        options: defaults,
+      }),
+    /20 saved/,
+  );
+  assert.throws(() =>
+    saveProfile(f.db, { name: "", roots: [], options: defaults }),
+  );
+  assert.throws(
+    () =>
+      saveProfile(f.db, {
+        name: "Relative path",
+        roots: ["../elsewhere"],
+        options: defaults,
+      }),
+    /absolute/,
+  );
+});
+test("the overlay logo has genuine transparent and opaque pixels", async () => {
+  const sharp = require("sharp"),
+    file = path.join(__dirname, "../public/daemoncore-logo-transparent.png"),
+    metadata = await sharp(file).metadata(),
+    stats = await sharp(file).stats();
+  assert.equal(metadata.hasAlpha, true);
+  assert.equal(stats.isOpaque, false);
+  assert.equal(stats.channels[3].min, 0);
+  assert.equal(stats.channels[3].max, 255);
 });

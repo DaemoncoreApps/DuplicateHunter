@@ -2,7 +2,7 @@
 
 A local Windows desktop application for finding exact duplicates, reviewing visually similar images, and moving selected copies through a recorded cleanup workflow. Built with Electron 44, React 19, TypeScript, Vite, Tailwind CSS 4, Node worker threads, and SQLite.
 
-The supplied DaemonCore logo is displayed in the top-left navigation and is the source for Windows assets. The original PNG is preserved unchanged, including its visible checkerboard background.
+The DaemonCore logo overlays the top-left navigation with genuine transparency, including the gaps between its shapes. The opaque original is preserved unchanged; `public/daemoncore-logo-transparent.png` is the cutout used by the app and Windows assets. See [LOGO-ASSET.md](LOGO-ASSET.md) for its edit specification.
 
 ## Run
 
@@ -16,6 +16,10 @@ npm start
 ```
 
 For development, use `npm run dev`. `Ctrl+1`, `Ctrl+2`, and `Ctrl+3` open Dashboard, Scan Center, and Duplicate Explorer. Escape closes media and issue dialogs. Window controls minimize, maximize/restore, and close the frameless desktop window.
+
+Version 0.2 adds focused scan presets, up to 20 named scan profiles, category/size/copy-count/cross-folder filters, page-wide suggested selection, a live file inspector, an image reveal-overlay comparison with zoom, clickable storage hotspots, a real scan-history chart, and a `Ctrl+K` command palette. Saved profiles retain folders and options locally; they do not schedule scans or delete files. The inspector distinguishes current, changed, missing, and inaccessible files against the recorded snapshot. Protected files are marked in results and excluded from suggested selection.
+
+The scan console shows the actual phase, active path, candidate counts, average phase pace, elapsed time, and issues. Any remaining-time estimate applies only to the current known-total phase. Discovery has no invented completion percentage.
 
 ## Scan and review
 
@@ -51,6 +55,8 @@ npm run verify:store
 ```
 
 Filesystem tests need normal Windows filesystem permissions; restricted sandboxes may deny hard links, junctions, or renames. The smoke command creates disposable fixtures and an isolated app profile, exercises the actual Electron worker, IPC, preview protocol, page navigation, and cleanup dry run, and writes its result and screenshot to `artifacts/`. It never scans or cleans user folders.
+
+Close other running instances before `npm run startup:check`. That check uses the normal persistent profile and must render a fresh Dashboard; an already-running instance is reported as a blocked test rather than a successful launch.
 
 Installers and Store packages are written to `release/`. `package:win` builds an NSIS installer; `package:store` builds an AppX package. These commands do not publish anything. The Microsoft identity is configured from the supplied Partner Center screenshot:
 
