@@ -1,0 +1,114 @@
+{
+  "name": "daemoncore-duplicate-hunter",
+  "productName": "DaemonCore: Duplicate Hunter",
+  "version": "0.1.0",
+  "description": "Private, offline duplicate discovery and reversible file cleanup for Windows.",
+  "author": "DaemonCore",
+  "license": "UNLICENSED",
+  "private": true,
+  "engines": {
+    "node": ">=24.11.0"
+  },
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron . --dev\"",
+    "build": "tsc --noEmit && vite build",
+    "start": "electron .",
+    "lint": "eslint src electron tests scripts",
+    "test": "node --test tests/*.test.cjs",
+    "check": "npm run lint && npm test && npm run build",
+    "icons": "node scripts/icons.cjs",
+    "notices": "node scripts/notices.cjs",
+    "format": "prettier --write src electron tests scripts *.json *.ts *.mjs *.md",
+    "format:check": "prettier --check src electron tests scripts *.json *.ts *.mjs *.md",
+    "package:win": "npm run icons && npm run notices && npm run build && electron-builder --win nsis --publish never",
+    "package:store": "npm run icons && npm run notices && npm run build && electron-builder --win appx --publish never",
+    "verify:store": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-store.ps1",
+    "package:all": "npm run icons && npm run notices && npm run build && electron-builder --win nsis appx --publish never",
+    "benchmark": "node scripts/benchmark.cjs",
+    "smoke": "electron . --smoke"
+  },
+  "dependencies": {
+    "lucide-react": "^0.468.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "sharp": "^0.35.4",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.0",
+    "@tailwindcss/vite": "^4.1.0",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "concurrently": "^9.2.0",
+    "electron": "44.7.2",
+    "electron-builder": "^26.0.0",
+    "eslint": "^9.39.0",
+    "globals": "^16.0.0",
+    "png-to-ico": "^3.0.0",
+    "prettier": "^3.6.0",
+    "tailwindcss": "^4.1.0",
+    "typescript": "^5.9.0",
+    "typescript-eslint": "^8.0.0",
+    "vite": "^7.0.0",
+    "wait-on": "^8.0.0"
+  },
+  "overrides": {
+    "@electron/get@3.1.0": {
+      "global-agent": "^4.1.3"
+    }
+  },
+  "build": {
+    "appId": "DaemonCore.DaemonCoreDuplicateHunter",
+    "productName": "DaemonCore Duplicate Hunter",
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/sharp/**",
+      "node_modules/@img/**"
+    ],
+    "npmRebuild": false,
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "build/icon.png",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "build/notices",
+        "to": "notices"
+      }
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        "nsis"
+      ],
+      "artifactName": "DaemonCore-Duplicate-Hunter-${version}-${arch}.${ext}"
+    },
+    "appx": {
+      "identityName": "DaemonCore.DaemonCoreDuplicateHunter",
+      "publisher": "CN=B7B53B09-651D-4171-90BE-4E9E1F5738BA",
+      "publisherDisplayName": "DaemonCore",
+      "displayName": "DaemonCore: Duplicate Hunter",
+      "applicationId": "DuplicateHunter",
+      "minVersion": "10.0.17763.0",
+      "maxVersionTested": "10.0.26200.0",
+      "backgroundColor": "#0b0c10",
+      "languages": [
+        "en-US"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false
+    }
+  }
+}
