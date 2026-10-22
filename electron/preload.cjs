@@ -6,6 +6,7 @@ const methods = new Set([
   "control",
   "groups",
   "pairs",
+  "bursts",
   "analytics",
   "fileAction",
   "previewCleanup",

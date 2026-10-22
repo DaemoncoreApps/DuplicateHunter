@@ -23,6 +23,7 @@ const {
 } = require("./database.cjs");
 const { settingsSchema, idsSchema } = require("./validation.cjs");
 const { queryGroups } = require("./explorer.cjs");
+const { findBursts } = require("./bursts.cjs");
 const {
   readProfiles,
   saveProfile,
@@ -315,6 +316,9 @@ async function handle(method, payload) {
         similarity: Math.round(100 * (1 - p.distance / 64)),
       })),
     };
+  }
+  if (method === "bursts") {
+    return findBursts(db, z.string().uuid().parse(payload));
   }
   if (method === "analytics") {
     const id = z.string().uuid().parse(payload);

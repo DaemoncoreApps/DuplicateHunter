@@ -23,8 +23,12 @@ import {
   Play,
   Square,
   ZoomIn,
+  Target,
+  Sparkles,
+  Camera,
+  Clock3,
 } from "lucide-react";
-import { Button } from "./components";
+import { Button, MediaThumb } from "./components";
 import { bytes, date, basename, duration } from "./format";
 
 export const defaultFilters = {
@@ -36,6 +40,203 @@ export const defaultFilters = {
   directory: "",
 };
 export type ExplorerFilters = typeof defaultFilters;
+
+export function CleanupMission({
+  groups,
+  onBuild,
+}: {
+  groups: any[];
+  onBuild: (files: Map<number, any>, saved: number, target: number) => void;
+}) {
+  const [targetMb, setTargetMb] = useState(1024);
+  const eligible = groups
+    .map((group) =>
+      group.files.filter(
+        (file: any) =>
+          file.id !== group.keep.id && file.nlink === 1 && !file.protected,
+      ),
+    )
+    .flat();
+  const saved = eligible.reduce((sum: number, file: any) => sum + file.size, 0);
+  const target = targetMb * 1024 * 1024;
+  const plan = new Map<number, any>();
+  let projected = 0;
+  for (const group of groups) {
+    const copies = group.files.filter(
+      (file: any) =>
+        file.id !== group.keep.id && file.nlink === 1 && !file.protected,
+    );
+    for (const file of copies) {
+      if (projected >= target || plan.size >= 1000) break;
+      plan.set(file.id, file);
+      projected += file.size;
+    }
+    if (projected >= target || plan.size >= 1000) break;
+  }
+  const count = new Set(
+    groups
+      .filter((group) => group.files.some((file: any) => plan.has(file.id)))
+      .map((group) => group.group_id),
+  ).size;
+  return (
+    <section className="mission-panel">
+      <div className="mission-copy">
+        <span className="eyebrow">
+          <Sparkles size={13} /> PERSONAL CLEANUP PLAN
+        </span>
+        <h2>Make room for what’s next.</h2>
+        <p>Set a goal. Review verified copies selected to reach it.</p>
+      </div>
+      <div className="mission-controls">
+        <label>
+          SPACE GOAL
+          <select
+            aria-label="Cleanup mission space goal"
+            value={targetMb}
+            onChange={(event) => setTargetMb(Number(event.target.value))}
+          >
+            <option value={100}>100 MB</option>
+            <option value={250}>250 MB</option>
+            <option value={500}>500 MB</option>
+            <option value={1024}>1 GB</option>
+            <option value={5120}>5 GB</option>
+            <option value={10240}>10 GB</option>
+          </select>
+        </label>
+        <div className="mission-projection">
+          <strong>{bytes(projected)}</strong>
+          <span>
+            planned from {count} duplicate {count === 1 ? "group" : "groups"}
+          </span>
+        </div>
+        <Button
+          kind="primary"
+          disabled={!plan.size}
+          onClick={() => onBuild(plan, projected, target)}
+        >
+          <Target size={15} /> Build review plan <ArrowRight size={15} />
+        </Button>
+      </div>
+      <div
+        className="mission-meter"
+        aria-label={`${bytes(saved)} eligible duplicate copies`}
+      >
+        <span
+          style={{ width: `${Math.min(100, (100 * projected) / target)}%` }}
+        />
+      </div>
+      <small className="mission-note">
+        {saved
+          ? `${bytes(saved)} available in the 30 largest groups on this scan. Exact copies only; you approve every move.`
+          : "Run a duplicate scan to build a real cleanup plan. No files move until you review and confirm."}
+      </small>
+    </section>
+  );
+}
+
+export function BurstReview({
+  data,
+  scanImages,
+  onCompare,
+}: {
+  data: any;
+  scanImages: boolean;
+  onCompare: (files: any[]) => void;
+}) {
+  if (!scanImages)
+    return (
+      <section className="burst-panel">
+        <div className="section-title">
+          <div>
+            <span className="eyebrow">PHOTO INTELLIGENCE</span>
+            <h2>Rapid photo bursts</h2>
+          </div>
+          <Camera size={20} />
+        </div>
+        <p className="muted">
+          Enable image analysis in a photo scan to find nearby shots from the
+          same folder.
+        </p>
+      </section>
+    );
+  return (
+    <section className="burst-panel">
+      <div className="section-title">
+        <div>
+          <span className="eyebrow">
+            <Camera size={13} /> MOMENT DETECTION
+          </span>
+          <h2>Rapid photo bursts</h2>
+        </div>
+        <span className="burst-count">{data.bursts.length} sequences</span>
+      </div>
+      <p className="muted">
+        Photos from the same folder taken within 90 seconds, ranked by image
+        dimensions. Similar shots stay review-only.
+      </p>
+      {data.truncated && (
+        <div className="notice compact">
+          Showing bursts from the first 5,000 analyzed photos.
+        </div>
+      )}
+      {data.bursts.length ? (
+        <div className="burst-list">
+          {data.bursts.slice(0, 8).map((burst: any, index: number) => (
+            <article
+              className="burst-card"
+              key={`${burst.directory}-${burst.started}-${index}`}
+            >
+              <div className="burst-heading">
+                <span>
+                  <Clock3 size={13} />{" "}
+                  {date(new Date(burst.started).toISOString())}
+                </span>
+                <strong>{burst.files.length} nearby shots</strong>
+              </div>
+              <div className="burst-photos">
+                {burst.files.slice(0, 5).map((file: any) => (
+                  <div
+                    className={
+                      file.id === burst.largest.id
+                        ? "burst-photo recommended"
+                        : "burst-photo"
+                    }
+                    key={file.id}
+                  >
+                    <MediaThumb file={file} />
+                    <span title={basename(file.path)}>
+                      {basename(file.path)}
+                    </span>
+                    <small>
+                      {file.width} × {file.height}
+                    </small>
+                    {file.id === burst.largest.id && <b>Largest dimensions</b>}
+                  </div>
+                ))}
+              </div>
+              <div className="burst-footer">
+                <span title={burst.directory}>{burst.directory}</span>
+                <Button onClick={() => onCompare(burst.files.slice(0, 4))}>
+                  <Images size={14} /> Compare shots
+                </Button>
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <div className="burst-empty">
+          <Camera size={26} />
+          <strong>No rapid sequences in this scan</strong>
+          <span>
+            We’ll surface groups of three or more photos from one folder taken
+            within 90 seconds.
+          </span>
+        </div>
+      )}
+    </section>
+  );
+}
+
 const presets = [
   {
     id: "exact",
@@ -725,15 +926,19 @@ export function FolderMap({
 export function FileInspector({
   data,
   selected,
+  isPreferred,
   onClose,
   onToggle,
   onAction,
+  onPreferFolder,
 }: {
   data: any;
   selected: boolean;
+  isPreferred: boolean;
   onClose: () => void;
   onToggle: () => void;
   onAction: (action: string) => void;
+  onPreferFolder: () => void;
 }) {
   const f = data.file;
   return (
@@ -842,6 +1047,26 @@ export function FileInspector({
             <small>Showing the first 50 recorded copies.</small>
           )}
         </div>
+        <div className="preference-card">
+          <div>
+            <Sparkles size={16} />
+            <span>
+              <strong>
+                {isPreferred
+                  ? "Preferred keep location"
+                  : "Teach your keep preference"}
+              </strong>
+              <small>
+                {isPreferred
+                  ? "Recommendations favor this folder."
+                  : "Future duplicate reviews can favor copies stored here."}
+              </small>
+            </span>
+          </div>
+          <Button onClick={onPreferFolder}>
+            {isPreferred ? "Forget folder" : "Prefer this folder"}
+          </Button>
+        </div>
         <div className="inspector-bottom">
           <p>
             Inspection is read-only. Selection adds a file to your review queue;
@@ -945,7 +1170,7 @@ export function ComparisonStage({
           </label>
         </>
       ) : (
-        <div className="media-comparison">
+        <div className={`media-comparison ${files.length > 2 ? "multi" : ""}`}>
           {files.map((f, i) => (
             <div key={f.id}>
               <div className="comparison-viewport">

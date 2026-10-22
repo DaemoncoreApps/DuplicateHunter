@@ -57,6 +57,8 @@ import {
   ScanProfiles,
   FilterPanel,
   WorkspaceOverview,
+  CleanupMission,
+  BurstReview,
   LiveScan,
   FolderMap,
   FileInspector,
@@ -132,6 +134,11 @@ function App() {
     [preview, setPreview] = useState<any>(null),
     [plan, setPlan] = useState<any>(null),
     [pairs, setPairs] = useState<any>({ total: 0, pairs: [] }),
+    [bursts, setBursts] = useState<any>({
+      totalImages: 0,
+      truncated: false,
+      bursts: [],
+    }),
     [pairOffset, setPairOffset] = useState(0),
     [threshold, setThreshold] = useState(90);
   const [drives, setDrives] = useState<any[]>([]),
@@ -282,6 +289,19 @@ function App() {
       active = false;
     };
   }, [currentId, page, pairOffset, threshold, revision]);
+  useEffect(() => {
+    if (!currentId || page !== "Similar Images") return;
+    let active = true;
+    window.hunter
+      .call("bursts", currentId)
+      .then((value) => {
+        if (active) setBursts(value);
+      })
+      .catch(message);
+    return () => {
+      active = false;
+    };
+  }, [currentId, page, revision]);
   useEffect(() => {
     setPlan(null);
   }, [selected]);
@@ -779,6 +799,16 @@ function App() {
                 icon={ShieldCheck}
               />
             </div>
+            <CleanupMission
+              groups={groupsLoading ? [] : groups.groups}
+              onBuild={(files, saved, target) => {
+                setSelected(files);
+                setPage("Cleanup Center");
+                setToast(
+                  `${bytes(saved)} selected toward your ${bytes(target)} goal. Review every file before cleanup.`,
+                );
+              }}
+            />
             <WorkspaceOverview
               summary={s}
               history={state.history}
@@ -1229,6 +1259,11 @@ function App() {
               noScan
             ) : (
               <>
+                <BurstReview
+                  data={bursts}
+                  scanImages={Boolean(s.options.scanImages)}
+                  onCompare={showCompare}
+                />
                 <section className="panel">
                   <div className="panel-heading">
                     <h2>
@@ -1973,6 +2008,39 @@ function App() {
           onClose={() => setInspector(null)}
           onToggle={() => toggle(inspector.file)}
           onAction={(command) => action(inspector.file, command)}
+          isPreferred={settings.preferredFolders.some(
+            (folder: string) =>
+              folder.toLowerCase() ===
+              String(inspector.file.directory || "").toLowerCase(),
+          )}
+          onPreferFolder={() =>
+            run(async () => {
+              const folder = inspector.file.directory;
+              if (!folder)
+                throw new Error("This file has no scanned folder path.");
+              const exists = settings.preferredFolders.some(
+                (item: string) => item.toLowerCase() === folder.toLowerCase(),
+              );
+              if (!exists && settings.preferredFolders.length >= 100)
+                throw new Error("You can save up to 100 preferred folders.");
+              const updated = {
+                ...settings,
+                preferredFolders: exists
+                  ? settings.preferredFolders.filter(
+                      (item: string) =>
+                        item.toLowerCase() !== folder.toLowerCase(),
+                    )
+                  : [...settings.preferredFolders, folder],
+              };
+              await window.hunter.call("saveSettings", updated);
+              setSettings(updated);
+              setToast(
+                exists
+                  ? "Folder preference removed."
+                  : "We’ll recommend keeping copies in this folder.",
+              );
+            })
+          }
         />
       )}
       {commandOpen && (

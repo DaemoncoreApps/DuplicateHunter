@@ -17,6 +17,8 @@ npm start
 
 For development, use `npm run dev`. `Ctrl+1`, `Ctrl+2`, and `Ctrl+3` open Dashboard, Scan Center, and Duplicate Explorer. Escape closes media and issue dialogs. Window controls minimize, maximize/restore, and close the frameless desktop window.
 
+Version 0.3 adds space-goal cleanup missions, preferred keep folders that can be taught from file inspection, rapid photo burst review, and a richer graphite-and-crimson dashboard. A mission fills a review queue from up to the 30 largest exact duplicate groups in the selected scan; the estimate counts eligible copies only. Every move still needs review and confirmation. Burst groups contain at least three analyzed photos in one folder taken within 90 seconds, with up to 5,000 photos considered. They remain review-only and recommend the largest image dimensions as a comparison cue, not an automatic choice.
+
 Version 0.2 adds focused scan presets, up to 20 named scan profiles, category/size/copy-count/cross-folder filters, page-wide suggested selection, a live file inspector, an image reveal-overlay comparison with zoom, clickable storage hotspots, a real scan-history chart, and a `Ctrl+K` command palette. Saved profiles retain folders and options locally; they do not schedule scans or delete files. The inspector distinguishes current, changed, missing, and inaccessible files against the recorded snapshot. Protected files are marked in results and excluded from suggested selection.
 
 The scan console shows the actual phase, active path, candidate counts, average phase pace, elapsed time, and issues. Any remaining-time estimate applies only to the current known-total phase. Discovery has no invented completion percentage.
