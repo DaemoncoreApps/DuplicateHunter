@@ -26,7 +26,7 @@ Run `npm run format:check`, `npm run check`, and `npm run smoke`. The Node suite
 
 These checks are evidence for the covered cases, not a substitute for the release checks below.
 
-Local verification on October 21, 2026: all 23 Node regression tests passed, as did linting, TypeScript, the Vite production build, and the Electron integration checks. The 10,000-file worker benchmark found the expected 5,000 groups and 40,960,000 indexed bytes with zero issues in 49,557 ms; peak process RSS was 108,478,464 bytes. Fixtures were 4 KB files in duplicate pairs, created in a disposable local directory. Fixture creation is outside the scan timing. This is one measured workload, not a million-file or large-video performance claim. Repeat it with `npm run benchmark -- 10000`.
+Local verification on October 22, 2026: formatting, linting, the TypeScript/Vite production build, all 31 Node regression tests, the Electron integration smoke check, and the AppX identity/assets check passed. The smoke check covered 33 integration points across scanning, analytics, IPC, navigation, cleanup safeguards, local previews, and the renderer sandbox. A normal-profile startup check reported an existing app instance and was left untouched; close Duplicate Hunter before running that check. The 10,000-file worker benchmark found the expected 5,000 groups and 40,960,000 indexed bytes with zero issues in 49,557 ms; peak process RSS was 108,478,464 bytes. Fixtures were 4 KB files in duplicate pairs, created in a disposable local directory. Fixture creation is outside the scan timing. This is one measured workload, not a million-file or large-video performance claim. Repeat it with `npm run benchmark -- 10000`.
 
 ## Before sale or Store submission
 
