@@ -17,7 +17,7 @@ npm start
 
 For development, use `npm run dev`. `Ctrl+1`, `Ctrl+2`, and `Ctrl+3` open Dashboard, Scan Center, and Duplicate Explorer. Escape closes media and issue dialogs. Window controls minimize, maximize/restore, and close the frameless desktop window.
 
-Version 0.3.1 makes scan diagnostics filterable, paged, selectable, and actionable: copy paths, reveal files, or exclude selected files/folders from future scans. Repeated events are summarized by type so the total no longer reads as a list of cleanup work. The Windows taskbar icon now uses the central emblem without the small wordmark.
+Version 0.3.2 adds a one-click, opt-in exclusion for the common folder behind a filtered diagnostic type, when all matching paths share a folder within the scanned root. Version 0.3.1 made diagnostics filterable, paged, selectable, and actionable: copy paths, reveal files, or exclude selected files/folders from future scans. Repeated events are summarized by type so the total no longer reads as a list of cleanup work. The Windows taskbar icon now uses the central emblem without the small wordmark.
 
 Version 0.3 adds space-goal cleanup missions, preferred keep folders that can be taught from file inspection, rapid photo burst review, and a richer graphite-and-crimson dashboard. A mission fills a review queue from up to the 30 largest exact duplicate groups in the selected scan; the estimate counts eligible copies only. Every move still needs review and confirmation. Burst groups contain at least three analyzed photos in one folder taken within 90 seconds, with up to 5,000 photos considered. They remain review-only and recommend the largest image dimensions as a comparison cue, not an automatic choice.
 

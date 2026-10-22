@@ -509,7 +509,28 @@ async function handle(method, payload) {
             "SELECT id,code,path FROM scan_errors WHERE scan_id=? ORDER BY id DESC LIMIT 100 OFFSET ?",
           )
           .all(q.scanId, q.offset);
-    return { counts, total, matching, offset: q.offset, rows };
+    let commonFolder = null;
+    if (q.code && matching && q.offset === 0) {
+      const paths = db
+        .prepare("SELECT path FROM scan_errors WHERE scan_id=? AND code=?")
+        .all(q.scanId, q.code)
+        .map((row) => path.win32.dirname(row.path));
+      let candidate = paths[0];
+      for (const folder of paths.slice(1))
+        while (candidate && !within(folder, candidate))
+          candidate = path.win32.dirname(candidate);
+      if (
+        candidate &&
+        JSON.parse(
+          db.prepare("SELECT roots FROM scans WHERE id=?").get(q.scanId).roots,
+        ).some(
+          (root) =>
+            within(candidate, root) && canonical(candidate) !== canonical(root),
+        )
+      )
+        commonFolder = candidate;
+    }
+    return { counts, total, matching, offset: q.offset, rows, commonFolder };
   }
   if (method === "copyIssuePaths") {
     const q = z

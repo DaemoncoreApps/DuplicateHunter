@@ -4,7 +4,7 @@ This is a working Windows application build. It is not represented as Microsoft 
 
 ## Implemented
 
-Version 0.3.1 improves scan diagnostics with grouped issue counts, filters, pagination, selection, path copy/reveal, and opt-in file/folder exclusions for future scans. The taskbar icon now uses the central brand emblem without the downsized wordmark. Version 0.3 added goal-based cleanup review plans, user-taught preferred keep folders, rapid photo burst review, and a richer graphite and crimson dashboard. Burst results are limited to 5,000 analyzed photos per scan and remain review-only.
+Version 0.3.2 adds an opt-in shortcut to exclude the common in-root folder behind a filtered diagnostic type. Version 0.3.1 improved scan diagnostics with grouped issue counts, filters, pagination, selection, path copy/reveal, and opt-in file/folder exclusions for future scans. The taskbar icon now uses the central brand emblem without the downsized wordmark. Version 0.3 added goal-based cleanup review plans, user-taught preferred keep folders, rapid photo burst review, and a richer graphite and crimson dashboard. Burst results are limited to 5,000 analyzed photos per scan and remain review-only.
 
 - Version 0.2: transparent branding, focused presets, saved scan profiles, advanced result filters, protected-copy recommendations, live metadata inspection, image reveal-overlay comparison, storage hotspot drilldown, history chart, and keyboard command navigation.
 

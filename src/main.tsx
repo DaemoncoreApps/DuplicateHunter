@@ -205,7 +205,12 @@ function App() {
       offset,
       code,
     });
-    setErrorList({ ...result, scanId });
+    setErrorList({
+      ...result,
+      commonFolder:
+        result.commonFolder ?? (offset > 0 ? errorList?.commonFolder : null),
+      scanId,
+    });
     setErrorOffset(offset);
     setErrorFilter(code);
     setSelectedIssues(new Set());
@@ -218,13 +223,8 @@ function App() {
       });
       setToast(`${count} diagnostic paths copied.`);
     });
-  const excludeSelectedIssues = (folders: boolean) =>
+  const saveIssueExclusions = (paths: string[], kind: string) =>
     run(async () => {
-      const paths = (errorList?.rows || [])
-        .filter((issue: any) => selectedIssues.has(issue.id))
-        .map((issue: any) =>
-          folders ? containingFolder(issue.path) : issue.path,
-        );
       const exclusions = [...new Set([...settings.exclusions, ...paths])];
       if (exclusions.length > 100)
         throw new Error(
@@ -238,9 +238,22 @@ function App() {
       setState({ ...state, settings: saved });
       setSelectedIssues(new Set());
       setToast(
-        `${paths.length} ${folders ? "folder" : "file"}${paths.length === 1 ? "" : "s"} excluded from future scans.`,
+        `${paths.length} ${kind}${paths.length === 1 ? "" : "s"} excluded from future scans.`,
       );
     });
+  const excludeSelectedIssues = (folders: boolean) =>
+    saveIssueExclusions(
+      [
+        ...new Set<string>(
+          (errorList?.rows || [])
+            .filter((issue: any) => selectedIssues.has(issue.id))
+            .map((issue: any) =>
+              folders ? containingFolder(issue.path) : issue.path,
+            ),
+        ),
+      ],
+      folders ? "folder" : "file",
+    );
   useEffect(() => {
     load().catch(message);
     window.hunter.call("drives").then(setDrives).catch(message);
@@ -2232,6 +2245,33 @@ function App() {
                 </Button>
               </div>
             </div>
+            {errorFilter && errorList.commonFolder && (
+              <div className="issue-common-folder">
+                <div>
+                  <strong>These diagnostics cluster in one folder</strong>
+                  <span title={errorList.commonFolder}>
+                    {errorList.commonFolder}
+                  </span>
+                  <small>
+                    Excluding it skips this folder on future scans. Existing
+                    scan results and files are left untouched.
+                  </small>
+                </div>
+                <Button
+                  disabled={
+                    working ||
+                    settings.exclusions.includes(errorList.commonFolder)
+                  }
+                  onClick={() =>
+                    saveIssueExclusions([errorList.commonFolder], "folder")
+                  }
+                >
+                  {settings.exclusions.includes(errorList.commonFolder)
+                    ? "Already excluded"
+                    : "Exclude folder next scan"}
+                </Button>
+              </div>
+            )}
             <div className="issue-list">
               {errorList.rows.map((issue: any) => (
                 <div className="issue-row" key={issue.id}>

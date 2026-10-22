@@ -2050,6 +2050,42 @@ main {
   padding: 6px 9px;
   font-size: 9px;
 }
+.issue-common-folder {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 11px 13px;
+  border: 1px solid #62404a;
+  border-radius: 8px;
+  background: linear-gradient(100deg, #3b202b88, #171820cc);
+}
+.issue-common-folder > div {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+.issue-common-folder strong {
+  color: #f0d9dd;
+  font-size: 10px;
+}
+.issue-common-folder span {
+  overflow: hidden;
+  color: #ff8b9a;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.issue-common-folder small {
+  color: #a7a1ae;
+  font-size: 9px;
+}
+.issue-common-folder .button {
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 6px 10px;
+  font-size: 9px;
+}
 .issue-list {
   min-height: 120px;
   overflow: auto;
