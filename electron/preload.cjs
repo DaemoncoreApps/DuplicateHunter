@@ -15,6 +15,8 @@ const methods = new Set([
   "saveSettings",
   "exportReport",
   "errors",
+  "copyIssuePaths",
+  "revealIssue",
   "drives",
   "clearHistory",
   "saveProfile",

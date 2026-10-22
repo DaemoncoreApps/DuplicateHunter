@@ -18,6 +18,7 @@ import {
   Square,
   Search,
   ChevronRight,
+  ChevronLeft,
   ArrowUpRight,
   Copy,
   FolderOpen,
@@ -115,6 +116,12 @@ const descriptions: Record<Page, string> = {
   "Scan History": "Your local scan archive. Reopen, compare, or scan again.",
   Settings: "Tune your workflow. Keep everything local.",
 };
+const containingFolder = (filePath: string) => {
+  const index = Math.max(filePath.lastIndexOf("\\"), filePath.lastIndexOf("/"));
+  if (index < 0) return filePath;
+  if (index === 2 && /^[A-Za-z]:/.test(filePath)) return filePath.slice(0, 3);
+  return index === 0 ? filePath.slice(0, 1) : filePath.slice(0, index);
+};
 function App() {
   const [page, setPage] = useState<Page>("Dashboard"),
     [state, setState] = useState<any>(null),
@@ -142,7 +149,10 @@ function App() {
     [pairOffset, setPairOffset] = useState(0),
     [threshold, setThreshold] = useState(90);
   const [drives, setDrives] = useState<any[]>([]),
-    [errorList, setErrorList] = useState<any[] | null>(null),
+    [errorList, setErrorList] = useState<any | null>(null),
+    [selectedIssues, setSelectedIssues] = useState<Set<number>>(new Set()),
+    [errorOffset, setErrorOffset] = useState(0),
+    [errorFilter, setErrorFilter] = useState(""),
     [compare, setCompare] = useState<string[]>([]);
   const [analytics, setAnalytics] = useState<any>({
     directories: [],
@@ -189,6 +199,48 @@ function App() {
     apply(data);
     return data;
   };
+  const loadIssues = async (scanId: string, offset = 0, code = "") => {
+    const result = await window.hunter.call("errors", {
+      scanId,
+      offset,
+      code,
+    });
+    setErrorList({ ...result, scanId });
+    setErrorOffset(offset);
+    setErrorFilter(code);
+    setSelectedIssues(new Set());
+  };
+  const copySelectedIssues = () =>
+    run(async () => {
+      const count = await window.hunter.call("copyIssuePaths", {
+        scanId: errorList?.scanId,
+        ids: [...selectedIssues],
+      });
+      setToast(`${count} diagnostic paths copied.`);
+    });
+  const excludeSelectedIssues = (folders: boolean) =>
+    run(async () => {
+      const paths = (errorList?.rows || [])
+        .filter((issue: any) => selectedIssues.has(issue.id))
+        .map((issue: any) =>
+          folders ? containingFolder(issue.path) : issue.path,
+        );
+      const exclusions = [...new Set([...settings.exclusions, ...paths])];
+      if (exclusions.length > 100)
+        throw new Error(
+          `You can save up to 100 exclusions. This action would create ${exclusions.length}.`,
+        );
+      const saved = await window.hunter.call("saveSettings", {
+        ...settings,
+        exclusions,
+      });
+      setSettings(saved);
+      setState({ ...state, settings: saved });
+      setSelectedIssues(new Set());
+      setToast(
+        `${paths.length} ${folders ? "folder" : "file"}${paths.length === 1 ? "" : "s"} excluded from future scans.`,
+      );
+    });
   useEffect(() => {
     load().catch(message);
     window.hunter.call("drives").then(setDrives).catch(message);
@@ -730,14 +782,8 @@ function App() {
             <History size={13} /> Snapshot from {date(s.started)} · {s.status}.
             Files may have changed since scanning.
             {s.errors > 0 && (
-              <button
-                onClick={() =>
-                  run(async () =>
-                    setErrorList(await window.hunter.call("errors", s.id)),
-                  )
-                }
-              >
-                {s.errors} issues to review
+              <button onClick={() => run(() => loadIssues(s.id))}>
+                {s.errors.toLocaleString()} scan diagnostics
               </button>
             )}
           </div>
@@ -2100,23 +2146,172 @@ function App() {
       {errorList && (
         <div className="modal-backdrop">
           <section
-            className="modal"
+            className="modal issue-modal"
             role="dialog"
             aria-modal="true"
             aria-label="Scan issues"
           >
             <div className="panel-heading">
-              <h2>Scan issues · latest 200</h2>
+              <div>
+                <h2>Scan diagnostics</h2>
+                <p className="muted">
+                  {errorList.total.toLocaleString()} events ·{" "}
+                  {errorList.matching.toLocaleString()} shown by this filter.
+                  Diagnostics describe scan conditions; they are not a cleanup
+                  list.
+                </p>
+              </div>
               <Button onClick={() => setErrorList(null)}>
                 <X size={16} /> Close
               </Button>
             </div>
-            {errorList.map((e, i) => (
-              <div className="issue" key={i}>
-                <strong>{e.code}</strong>
-                <small>{e.path}</small>
+            <div className="issue-summary">
+              {errorList.counts.slice(0, 4).map((entry: any) => (
+                <div key={entry.code}>
+                  <strong>{entry.count.toLocaleString()}</strong>
+                  <span>{entry.code}</span>
+                </div>
+              ))}
+            </div>
+            <div className="issue-toolbar">
+              <label>
+                ISSUE TYPE
+                <select
+                  aria-label="Filter scan diagnostics by issue type"
+                  value={errorFilter}
+                  onChange={(event) =>
+                    run(() =>
+                      loadIssues(errorList.scanId, 0, event.target.value),
+                    )
+                  }
+                >
+                  <option value="">All issue types</option>
+                  {errorList.counts.map((entry: any) => (
+                    <option value={entry.code} key={entry.code}>
+                      {entry.code} · {entry.count.toLocaleString()}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="issue-actions">
+                <Button
+                  disabled={!errorList.rows.length}
+                  onClick={() => {
+                    const visible = errorList.rows.map((row: any) => row.id);
+                    const allSelected = visible.every((id: number) =>
+                      selectedIssues.has(id),
+                    );
+                    setSelectedIssues(
+                      allSelected ? new Set() : new Set(visible),
+                    );
+                  }}
+                >
+                  {errorList.rows.every((row: any) =>
+                    selectedIssues.has(row.id),
+                  )
+                    ? "Clear page"
+                    : "Select page"}
+                </Button>
+                <Button
+                  disabled={!selectedIssues.size || working}
+                  onClick={copySelectedIssues}
+                >
+                  <Copy size={14} /> Copy paths ({selectedIssues.size})
+                </Button>
+                <Button
+                  disabled={!selectedIssues.size || working}
+                  onClick={() => excludeSelectedIssues(false)}
+                >
+                  Exclude files next scan
+                </Button>
+                <Button
+                  disabled={!selectedIssues.size || working}
+                  onClick={() => excludeSelectedIssues(true)}
+                >
+                  Exclude folders next scan
+                </Button>
               </div>
-            ))}
+            </div>
+            <div className="issue-list">
+              {errorList.rows.map((issue: any) => (
+                <div className="issue-row" key={issue.id}>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={selectedIssues.has(issue.id)}
+                      onChange={() =>
+                        setSelectedIssues((old) => {
+                          const next = new Set(old);
+                          if (next.has(issue.id)) next.delete(issue.id);
+                          else next.add(issue.id);
+                          return next;
+                        })
+                      }
+                    />
+                    <span>
+                      <strong>{issue.code}</strong>
+                      <small title={issue.path}>{issue.path}</small>
+                    </span>
+                  </label>
+                  <Button
+                    title="Reveal this path in File Explorer"
+                    ariaLabel={`Reveal ${issue.path} in File Explorer`}
+                    onClick={() =>
+                      run(async () => {
+                        await window.hunter.call("revealIssue", {
+                          scanId: errorList.scanId,
+                          id: issue.id,
+                        });
+                      })
+                    }
+                  >
+                    <FolderOpen size={14} /> Reveal
+                  </Button>
+                </div>
+              ))}
+              {!errorList.rows.length && (
+                <p className="muted issue-empty">
+                  No diagnostics match this filter.
+                </p>
+              )}
+            </div>
+            <div className="issue-pagination">
+              <span>
+                {errorList.matching
+                  ? `${errorOffset + 1}–${Math.min(errorOffset + errorList.rows.length, errorList.matching)} of ${errorList.matching.toLocaleString()}`
+                  : "No results"}
+              </span>
+              <div>
+                <Button
+                  disabled={errorOffset === 0 || working}
+                  onClick={() =>
+                    run(() =>
+                      loadIssues(
+                        errorList.scanId,
+                        Math.max(0, errorOffset - 100),
+                        errorFilter,
+                      ),
+                    )
+                  }
+                >
+                  <ChevronLeft size={15} /> Previous
+                </Button>
+                <Button
+                  disabled={errorOffset + 100 >= errorList.matching || working}
+                  onClick={() =>
+                    run(() =>
+                      loadIssues(
+                        errorList.scanId,
+                        errorOffset + 100,
+                        errorFilter,
+                      ),
+                    )
+                  }
+                >
+                  Next <ChevronRight size={15} />
+                </Button>
+              </div>
+            </div>
           </section>
         </div>
       )}

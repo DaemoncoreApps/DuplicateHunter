@@ -474,12 +474,71 @@ async function handle(method, payload) {
       notify({ type: "refresh", state: boot() });
     }
   }
-  if (method === "errors")
-    return db
+  if (method === "errors") {
+    const q = z
+      .object({
+        scanId: z.string().uuid(),
+        offset: z.number().int().min(0).max(1000000).default(0),
+        code: z.string().max(160).default(""),
+      })
+      .strict()
+      .parse(payload);
+    const counts = db
       .prepare(
-        "SELECT code,path FROM scan_errors WHERE scan_id=? ORDER BY id DESC LIMIT 200",
+        "SELECT code,COUNT(*) count FROM scan_errors WHERE scan_id=? GROUP BY code ORDER BY count DESC,code",
       )
-      .all(z.string().uuid().parse(payload));
+      .all(q.scanId);
+    const total = db
+      .prepare("SELECT COUNT(*) count FROM scan_errors WHERE scan_id=?")
+      .get(q.scanId).count;
+    const matching = q.code
+      ? db
+          .prepare(
+            "SELECT COUNT(*) count FROM scan_errors WHERE scan_id=? AND code=?",
+          )
+          .get(q.scanId, q.code).count
+      : total;
+    const rows = q.code
+      ? db
+          .prepare(
+            "SELECT id,code,path FROM scan_errors WHERE scan_id=? AND code=? ORDER BY id DESC LIMIT 100 OFFSET ?",
+          )
+          .all(q.scanId, q.code, q.offset)
+      : db
+          .prepare(
+            "SELECT id,code,path FROM scan_errors WHERE scan_id=? ORDER BY id DESC LIMIT 100 OFFSET ?",
+          )
+          .all(q.scanId, q.offset);
+    return { counts, total, matching, offset: q.offset, rows };
+  }
+  if (method === "copyIssuePaths") {
+    const q = z
+      .object({ scanId: z.string().uuid(), ids: idsSchema })
+      .strict()
+      .parse(payload);
+    const placeholders = q.ids.map(() => "?").join(",");
+    const rows = db
+      .prepare(
+        `SELECT path FROM scan_errors WHERE scan_id=? AND id IN (${placeholders}) ORDER BY id`,
+      )
+      .all(q.scanId, ...q.ids);
+    if (!rows.length)
+      throw new Error("Those scan diagnostics are unavailable.");
+    clipboard.writeText(rows.map((row) => row.path).join("\n"));
+    return rows.length;
+  }
+  if (method === "revealIssue") {
+    const q = z
+      .object({ scanId: z.string().uuid(), id: z.number().int().positive() })
+      .strict()
+      .parse(payload);
+    const issue = db
+      .prepare("SELECT path FROM scan_errors WHERE scan_id=? AND id=?")
+      .get(q.scanId, q.id);
+    if (!issue) throw new Error("This scan diagnostic is unavailable.");
+    shell.showItemInFolder(issue.path);
+    return true;
+  }
   if (method === "drives") {
     const results = [];
     const candidates =

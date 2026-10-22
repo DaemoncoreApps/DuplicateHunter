@@ -19,12 +19,14 @@ export function Button({
   kind = "",
   disabled = false,
   title,
+  ariaLabel,
 }: {
   children: React.ReactNode;
   onClick?: () => void;
   kind?: string;
   disabled?: boolean;
   title?: string;
+  ariaLabel?: string;
 }) {
   return (
     <button
@@ -32,6 +34,7 @@ export function Button({
       onClick={onClick}
       disabled={disabled}
       title={title}
+      aria-label={ariaLabel}
     >
       {children}
     </button>

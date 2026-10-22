@@ -850,7 +850,7 @@ export function LiveScan({
           <small>ELAPSED / ISSUES</small>
           <strong>{duration(progress.elapsed)}</strong>
           <span>
-            {progress.errors.toLocaleString()} issues recorded for review
+            {progress.errors.toLocaleString()} scan diagnostics recorded
           </span>
         </div>
       </div>

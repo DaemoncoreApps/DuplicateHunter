@@ -34,6 +34,9 @@ function openDatabase(filename) {
       id INTEGER PRIMARY KEY, scan_id TEXT NOT NULL REFERENCES scans(id) ON DELETE CASCADE,
       code TEXT NOT NULL, path TEXT NOT NULL
     );`);
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS scan_errors_by_scan ON scan_errors(scan_id,id)",
+  );
   if (
     !db
       .prepare("PRAGMA table_info(files)")
