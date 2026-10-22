@@ -36,16 +36,18 @@ const {
   reconcile,
 } = require("./cleanup.cjs");
 const { imageExtensions, videoExtensions } = require("./scanner.cjs");
+const { profilePath } = require("./paths.cjs");
 
 const dev = process.argv.includes("--dev"),
   smoke = process.argv.includes("--smoke");
-if (smoke)
-  app.setPath(
-    "userData",
-    require("node:fs").mkdtempSync(
+const userData = smoke
+  ? require("node:fs").mkdtempSync(
       path.join(app.getPath("temp"), "DuplicateHunter-Smoke-"),
-    ),
-  );
+    )
+  : profilePath(app.getPath("appData"));
+app.setPath("userData", userData);
+app.setPath("sessionData", userData);
+app.setAppLogsPath(path.join(userData, "logs"));
 protocol.registerSchemesAsPrivileged([
   {
     scheme: "hunter",
@@ -597,6 +599,24 @@ async function createWindow() {
   win.once("ready-to-show", () => win.show());
   if (dev) await win.loadURL("http://127.0.0.1:5173/");
   else await win.loadFile(path.join(__dirname, "../dist/index.html"));
+  if (process.argv.includes("--startup-check")) {
+    const result = await win.webContents
+      .executeJavaScript(`new Promise((resolve,reject)=>{
+      const timeout=setTimeout(()=>reject(new Error('Normal startup did not render the dashboard.')),10000);
+      const check=setInterval(async()=>{if(!document.querySelector('h1'))return;clearInterval(check);try{const state=await window.hunter.call('boot');clearTimeout(timeout);resolve({title:document.title,heading:document.querySelector('h1').textContent,version:state.version});}catch(error){clearTimeout(timeout);reject(error);}},50);
+    })`);
+    if (result.heading !== "Dashboard")
+      throw new Error("Normal startup did not display Dashboard.");
+    console.log(
+      JSON.stringify({
+        startupPassed: true,
+        userData: app.getPath("userData"),
+        sessionData: app.getPath("sessionData"),
+        ...result,
+      }),
+    );
+    app.quit();
+  }
   if (smoke) {
     const failures = [];
     win.webContents.on("render-process-gone", (_e, details) =>

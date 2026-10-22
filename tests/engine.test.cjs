@@ -27,6 +27,14 @@ const {
   reconcile,
 } = require("../electron/cleanup.cjs");
 const { settingsSchema } = require("../electron/validation.cjs");
+const { profilePath } = require("../electron/paths.cjs");
+
+test("normal Windows profile paths do not inherit the colon in the display name", () => {
+  const folder = profilePath(path.resolve("AppData", "Roaming"));
+  assert.equal(path.basename(folder), "daemoncore-duplicate-hunter");
+  assert.ok(!/[<>:"|?*]/.test(path.basename(folder)));
+  assert.equal(profilePath(path.resolve("AppData", "Roaming")), folder);
+});
 
 async function fixture(t) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "hunter-test-"));

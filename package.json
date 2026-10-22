@@ -1,7 +1,7 @@
 {
   "name": "daemoncore-duplicate-hunter",
   "productName": "DaemonCore: Duplicate Hunter",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Private, offline duplicate discovery and reversible file cleanup for Windows.",
   "author": "DaemonCore",
   "license": "UNLICENSED",
@@ -26,7 +26,8 @@
     "verify:store": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-store.ps1",
     "package:all": "npm run icons && npm run notices && npm run build && electron-builder --win nsis appx --publish never",
     "benchmark": "node scripts/benchmark.cjs",
-    "smoke": "electron . --smoke"
+    "smoke": "electron . --smoke",
+    "startup:check": "electron . --startup-check"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",

@@ -18,6 +18,7 @@ jobs:
       - run: npm run format:check
       - run: npm run check
       - run: npm run smoke
+      - run: npm run startup:check
       - run: npm run package:store
       - run: npm run verify:store
       - uses: actions/upload-artifact@v4

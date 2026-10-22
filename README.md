@@ -44,6 +44,7 @@ Exact video matching uses the same byte-verification engine as other files. Inli
 npm run format:check
 npm run check
 npm run smoke
+npm run startup:check
 npm run package:win
 npm run package:store
 npm run verify:store
@@ -64,3 +65,5 @@ Installers and Store packages are written to `release/`. `package:win` builds an
 The executable basename omits the colon because Windows filenames cannot contain it. The app, window title, and Store display name retain it.
 
 This build has not passed Microsoft Store certification. See [RELEASE-READINESS.md](RELEASE-READINESS.md) for the remaining distribution checks, [ARCHITECTURE.md](ARCHITECTURE.md) for the implementation and threat boundaries, and [THIRD-PARTY.md](THIRD-PARTY.md) for redistribution considerations.
+
+Version 0.1.1 fixes normal Windows startup by keeping the persistent profile at `%APPDATA%/daemoncore-duplicate-hunter`. The display name retains its colon; filesystem paths do not inherit it. `startup:check` exercises this real profile and renderer startup, while `smoke` exercises disposable scan fixtures in a separate profile.

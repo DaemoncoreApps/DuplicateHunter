@@ -26,6 +26,8 @@ Local verification on October 21, 2026: all 23 Node regression tests passed, as 
 
 ## Before sale or Store submission
 
+Version 0.1.1 repairs a normal-startup failure in 0.1.0: Electron inherited the display name's colon when creating its default Windows profile. The app now assigns stable, valid user-data, session-data, and log paths before requesting the single-instance lock. A normal-profile startup check is included in Windows CI so isolated smoke profiles cannot hide this regression.
+
 1. Complete the Windows App Certification Kit and Partner Center certification on the exact package to be submitted. Verify final manifest identity, capabilities, display assets, supported Windows versions, and package signing/install trust.
 2. Validate installation, upgrade, uninstall, persisted user-data behavior, and restoration on clean Windows 10 and Windows 11 machines. The local installer is unsigned unless a publisher certificate is provided at build time.
 3. Perform accessibility testing with Narrator, keyboard-only use, high contrast, high DPI, and multiple monitors. Check focus behavior, reduced motion, contrast, and screen reader announcements on the packaged build.
